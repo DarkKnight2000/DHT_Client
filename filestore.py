@@ -1,6 +1,6 @@
 import click
 import time
-import socket, sys, requests, json, base64
+import socket, sys, requests, json, base64, os
 from cryptography.fernet import Fernet
 
 chunk_size = 50
@@ -11,7 +11,7 @@ def op():
     pass
 
 @op.command()
-@click.option('--filename', type=click.File('rb'), help='Path to file to be uploaded', required=True)
+@click.option('--filename', type=click.STRING, help='Path to file to be uploaded', required=True)
 # @click.option('--keysfilepath', default='.', type=click.Path(exists=True, resolve_path=True), help='Path to store the recieved keys. Default is current directory')
 @click.option('--keysfilename', type=click.File('wb'), help='File name to store the recieved keys. If the file is not in current directory, include path to the file', required=True)#TODO:change to not required and check for overwiting 
 def upload(filename, keysfilename):
@@ -35,16 +35,14 @@ def upload(filename, keysfilename):
 
 
     # Read file content
-    click.echo('Reading file contents...')
-    chunks = []
-    with filename as f:
-        content = f.read(chunk_size)
-        while len(content) > 0:
-            # print('******** chunk ********')
-            # print(content)
-            chunks.append(content)
-            content = f.read(chunk_size)
-    click.echo('Closing file...')
+    # chunks = []
+    # with filename as f:
+    #     content = f.read(chunk_size)
+    #     while len(content) > 0:
+    #         # print('******** chunk ********')
+    #         # print(content)
+    #         chunks.append(content)
+    #         content = f.read(chunk_size)
 
     # Generating key for encryption
     fernet_key = Fernet.generate_key()
@@ -54,9 +52,17 @@ def upload(filename, keysfilename):
     # nodeAddr = '127.0.0.1'
     # nodePort = 9000
 
+    # Getting file size
+    file_size = os.path.getsize(filename)
+    print(f'Reading file {filename} of size {file_size} bytes')
+
+
     # Upload to server
-    with click.progressbar(chunks, label = 'Uploading to server') as prog_chunks, keysfilename as k:
-        for i, chunk in enumerate(prog_chunks):
+    with click.progressbar(length = file_size, label = 'Uploading to server') as prog_bar, keysfilename as k, open(filename, 'rb') as f:
+        click.echo('Reading file contents...')
+        chunk = f.read(chunk_size)
+        i = 0
+        while len(chunk) > 0:
             # # # # Call api
             key = f"{i}_key"
             data = requests.post(url = f'http://{nodeAddr}:{nodePort+1}', json = {'JSONRPCMethod':'dht_putValue', 'Key':key, 'Value':Fernet(fernet_key).encrypt(chunk).decode()}) # Encrypting with key and sending string to server
@@ -65,6 +71,12 @@ def upload(filename, keysfilename):
             # print(data.status_code)
             # Write to keysFileName
             k.write(f'{key}\n'.encode()) #TODO: Check for status code
+            chunk = f.read(chunk_size) #TODO: Add exception handling
+            i += 1
+            prog_bar.update(chunk_size)
+
+        click.echo('Closing file...')
+
 
     click.echo('Finished uploading to server! Use this keystore file to retrieve your file contents anytime!')
 
@@ -82,7 +94,7 @@ def retrieve(filename, keysfilename):
     fernet_key = None
     with keysfilename as kf:
         fernet_key = kf.readline().strip()
-        print('fkey', fernet_key)
+        # print('fkey', fernet_key)
         while True:
             key = kf.readline()
             if not key : break
