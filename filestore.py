@@ -1,9 +1,16 @@
 import click
 import time
-import socket, sys, requests, json, base64, os
+import socket, sys, requests, random, os
 from cryptography.fernet import Fernet
 
 chunk_size = 2048
+
+def sendReq(url, method, key, value):
+    try:
+        data = requests.post(url = url, json = {'JSONRPCMethod':method, 'Key':key, 'Value':value})
+        return data
+    except requests.ConnectionError:
+        return None
 
 @click.group()
 def op():
@@ -20,9 +27,9 @@ def upload(filename, keysfilename):
     # Getting file size
     try:
         file_size = os.path.getsize(filename)
-        print(f'Reading file {filename} of size {file_size} bytes')
+        click.echo(f'Reading file {filename} of size {file_size} bytes')
     except FileNotFoundError:
-        print(f'Usage: filestore.py upload [OPTIONS]\nTry "filestore.py upload --help" for help.\n\nError: Invalid value for "--filename": Could not open file: {filename}: No such file or directory')
+        click.echo(f'Usage: filestore.py upload [OPTIONS]\nTry "filestore.py upload --help" for help.\n\nError: Invalid value for "--filename": Could not open file: {filename}: No such file or directory')
         return
 
     # Contacting discovery server
@@ -30,7 +37,7 @@ def upload(filename, keysfilename):
     nodePort = None
     # Get node address
     try:
-        print('Contacting Server...')
+        click.echo('Contacting Server...')
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             hostname = '127.0.0.1'
             s.connect((hostname, 8000))
@@ -42,9 +49,9 @@ def upload(filename, keysfilename):
             # print('recved addr ', data[2], ' port ', data[4])
             nodeAddr = data[2]
             nodePort = int(data[4])
-        print('Success!')
+        click.echo('Success!')
     except ConnectionRefusedError as err:
-        print('Error: Server refused connection\nAborting operation')
+        click.echo('Error: Server refused connection\nAborting operation')
         return
 
 
@@ -73,20 +80,24 @@ def upload(filename, keysfilename):
         i = 0
         while len(chunk) > 0:
             # # # # Call api
-            key = f"{i}_key" #TODO: add random key
-            try:
-                data = requests.post(url = f'http://{nodeAddr}:{nodePort+1}', json = {'JSONRPCMethod':'dht_putValue', 'Key':key, 'Value':Fernet(fernet_key).encrypt(chunk).decode()}) # Encrypting with key and sending string to server
-            except requests.ConnectionError:
-                print('Got invalid address from server. Aborting operation! Try again after sometime..')
+            key = f"{int(time.time()*1000)}" #TODO: Confirm if rewriting can happen
+
+            data = sendReq(f'http://{nodeAddr}:{nodePort+1}', 'dht_putValue', key, Fernet(fernet_key).encrypt(chunk).decode()) # Encrypting with key and sending string to server
+            if not data:
+                click.echo('Error : Got invalid address from server. Aborting operation! Try again after sometime..')
                 return
             # print(data)
             # print(data.text)
             # print(data.status_code)
             # Write to keysFileName
-            k.write(f'{key}\n'.encode()) #TODO: Check for status code
-            chunk = f.read(chunk_size)
-            i += 1
-            prog_bar.update(chunk_size)
+            if data.status_code == 200:
+                k.write(f'{key}\n'.encode())
+                chunk = f.read(chunk_size)
+                i += 1
+                prog_bar.update(chunk_size)
+            else:
+                click.echo(f'Error : Server returned status code {data.status_code}\nAborting operation!')
+                return
 
         click.echo('Closing file...')
 
@@ -112,12 +123,18 @@ def retrieve(filename, keysfilename):
             key = kf.readline()
             if not key : break
             keys.append(key.strip().decode())
+        if len(keys) == 0:
+            click.echo("Error : No keys found in the given file\nTry \"filestore.py retrieve --help\" for help.")
+            return
+        if fernet_key == "":
+            click.echo("Error : Invalid keys file\nTry \"filestore.py retrieve --help\" for help.")
+            return
     click.echo('Closing keys file...')
 
     nodeAddr = None
     nodePort = None
     try:
-        print('Contacting Server...')
+        click.echo('Contacting Server...')
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             hostname = '127.0.0.1'
             s.connect((hostname, 8000))
@@ -130,7 +147,7 @@ def retrieve(filename, keysfilename):
             nodeAddr = data[2]
             nodePort = int(data[4])
     except ConnectionRefusedError as err:
-        print('Error: Server refused connection\nAborting operation')
+        click.echo('Error: Server refused connection\nAborting operation')
         return
     # nodeAddr = '127.0.0.1'
     # nodePort = 9000
@@ -140,24 +157,27 @@ def retrieve(filename, keysfilename):
     with click.progressbar(keys, label = 'Downloading from server') as p_keys, filename as f:
         for key in p_keys:
             # # # # Call api
-            try:
-                data = requests.post(url = f'http://{nodeAddr}:{nodePort+1}', json = {'JSONRPCMethod':'dht_getValue', 'Key':key, 'Value':''})
-            except requests.ConnectionError:
-                print('Got invalid address from server. Aborting operation! Try again after sometime..')
+            data = sendReq(f'http://{nodeAddr}:{nodePort+1}', 'dht_getValue', key, "")
+            if not data:
+                click.echo('Error : Got invalid address from server. Aborting operation! Try again after sometime..')
                 return
             # Write to keysFileName
             # print(data.status_code)
             # print('recvd text', data.text)
             if data.text == "":
-                print('Data not found for given key!')
+                click.echo('Warning : Data not found for given key!')
                 gotCompleteData = False
             else:
-                chunk = Fernet(fernet_key).decrypt(data.text.encode())
+                try:
+                    chunk = Fernet(fernet_key).decrypt(data.text.encode())
+                except ValueError:
+                    click.echo("Error : Invalid keys file\nTry \"filestore.py retrieve --help\" for help.")
+                    return
                 # print('ret text', chunk)
                 f.write(chunk)
 
     click.echo('Download complete!')
-    if not gotCompleteData : print('Warning : Couldn\'t retrieve some part of data!')
+    if not gotCompleteData : click.echo('Warning : Couldn\'t retrieve some part of data!')
 
 
 if __name__ == '__main__':
