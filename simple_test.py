@@ -15,6 +15,13 @@ def test_sync():
     assert 'Download complete!' in result.output
     print('Retrieve test succesful!')
 
+    f1 = open('./Misc/testfile.txt', 'rb')
+    f2 = open('./Misc/retestfile.txt', 'rb')
+    if f1.read() == f2.read():
+        print('Got same data')
+    else:
+        print('Got different data')
+
 
 if __name__ == "__main__":
     test_sync()

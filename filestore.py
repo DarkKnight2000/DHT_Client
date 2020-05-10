@@ -2,6 +2,7 @@ import click
 import time
 import socket, sys, requests, random, os
 from cryptography.fernet import Fernet
+import hashlib
 
 chunk_size = 2048
 
@@ -80,9 +81,12 @@ def upload(filename, keysfilename):
         i = 0
         while len(chunk) > 0:
             # # # # Call api
-            key = f"{int(time.time()*1000)}" #TODO: Confirm if rewriting can happen
+            chunk = Fernet(fernet_key).encrypt(chunk)
+            hashObj = hashlib.sha256()
+            hashObj.update(chunk)
+            key = hashObj.hexdigest()
 
-            data = sendReq(f'http://{nodeAddr}:{nodePort+1}', 'dht_putValue', key, Fernet(fernet_key).encrypt(chunk).decode()) # Encrypting with key and sending string to server
+            data = sendReq(f'http://{nodeAddr}:{nodePort+1}', 'dht_putValue', key, chunk.decode()) # Encrypting with key and sending string to server
             if not data:
                 click.echo('Error : Got invalid address from server. Aborting operation! Try again after sometime..')
                 return
