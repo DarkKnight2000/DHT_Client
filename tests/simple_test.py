@@ -6,9 +6,9 @@ from filestore import op
 
 def test_sync():
 
-    f = open(f'../Misc/testfile.txt', 'w')
-    f.write(lorem.paragraph())
-    f.close()
+    # f = open(f'../Misc/testfile.txt', 'w')
+    # f.write(lorem.paragraph())
+    # f.close()
 
     runner = CliRunner()
     result = runner.invoke(op, ['upload', '--filename', '../Misc/testfile.txt', '--keysfilename', '../Misc/testkeys.txt'])
