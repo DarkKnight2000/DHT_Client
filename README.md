@@ -3,7 +3,7 @@
 ##  Installing necessary packages
 
 ```
-pip3 install "Click==7.0" "requests==2.23.0" "cryptography==2.6.1"
+pip3 install Click==7.0 requests==2.23.0 cryptography==2.6.1
 ```
 
 ## Running the CLI
